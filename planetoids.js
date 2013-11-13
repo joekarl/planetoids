@@ -5,8 +5,12 @@ var g = {
     halfHeight: 300,
     rotationSpeed: 0.07,
     thrustSpeed: 0.3,
-    entities: [],
+    entities: {},
     shipFriction: 0.05,
+    entityId: 0,
+    laserSpeed: 5,
+    laserLife: 100,
+    laserFireRate: 10, 
     ups: 30 //updates per second
 };
 
@@ -37,6 +41,16 @@ function Transform() {
         _va = 0;
 
     return {
+        copy: function(transform) {
+            _x = transform.x();
+            _y = transform.y();
+            _vx = transform.vx();
+            _vy = transform.vy();
+            _sx = transform.sx();
+            _sy = transform.sy();
+            _angle = transform.angle();
+            _va = transform.va();
+        },
         x: function(_) {
             if (_ != undefined) {
                 _x = _;
@@ -98,11 +112,57 @@ function Transform() {
 
 function Entity() {
     var _transform = new Transform();
+    var _id = g.entityId++;
     return {
         transform: function() {
             return _transform;
+        },
+        id: function() {
+            return _id;
         }
     };
+}
+
+function Laser(transform) {
+    var _laser = Object.create(Entity());
+
+    var _transform = _laser.transform();
+    _transform.copy(transform);
+    _transform.vx(_transform.vx() - Math.cos(_transform.angle()) * g.laserSpeed);
+    _transform.vy(_transform.vy() + Math.sin(_transform.angle()) * g.laserSpeed);
+    _transform.angle(0);
+    _transform.va(0);
+    _transform.sx(2);
+    _transform.sy(2);
+
+    var _life = g.laserLife;
+
+    _laser.update = function() {
+        if (_transform.x() > g.halfWidth) {
+            _transform.x(-g.halfWidth);
+        } else if (_transform.x() < -g.halfWidth) {
+            _transform.x(g.halfWidth);
+        }
+        if (_transform.y() > g.halfHeight) {
+            _transform.y(-g.halfHeight);
+        } else if (_transform.y() < -g.halfHeight) {
+            _transform.y(g.halfHeight);
+        }
+
+        if (_life-- < 0) {
+            delete g.entities[_laser.id()];
+        }
+    };
+
+    _laser.render = function(dt, ctx) {
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-1, 0);
+        ctx.stroke();
+    }
+
+    return _laser;
 }
 
 function Ship() {
@@ -112,6 +172,7 @@ function Ship() {
     _transform.sx(5);
     _transform.sy(5);
     _transform.angle(- Math.PI / 2);
+    var fireCounter = g.laserFireRate;
 
     _ship.update = function() {
         var previousVx = _transform.vx();
@@ -166,6 +227,11 @@ function Ship() {
             _transform.vx(_transform.vx() - Math.cos(_transform.angle()) * g.thrustSpeed);
             _transform.vy(_transform.vy() + Math.sin(_transform.angle()) * g.thrustSpeed);
         }
+        if (fireCounter-- < 0 && input.isActive(input.LASER)) {
+            var laser = Object.create(Laser(_transform));
+            g.entities[laser.id()] = laser;
+            fireCounter = g.laserFireRate;
+        }
     }
 
     _ship.render = function(dt, ctx) {
@@ -186,9 +252,10 @@ function initInput() {
     g.input = {
         _pressed: {},
         
-        THRUST: 38,
-        ROTATE_LEFT: 37,
-        ROTATE_RIGHT: 39,
+        THRUST: 38, //up
+        ROTATE_LEFT: 37, //left
+        ROTATE_RIGHT: 39, //right
+        LASER: 32, //space
 
         isActive: function(code) {
             return this._pressed[code];
@@ -216,7 +283,8 @@ function clearScreen(ctx) {
 }
 
 function update(dt) {
-    g.entities.forEach(function updateEntity(entity){
+    Object.keys(g.entities).forEach(function (id){
+        var entity = g.entities[id];
         var transform = entity.transform();
         transform.x(transform.x() + transform.vx());
         transform.y(transform.y() + transform.vy());
@@ -229,7 +297,8 @@ function update(dt) {
 
 function render(dt, ctx) {
     clearScreen(ctx);
-    g.entities.forEach(function renderEntity(entity){
+    Object.keys(g.entities).forEach(function (id){
+        var entity = g.entities[id];
         if (entity.render) {
             var transform = entity.transform();
             ctx.save();
@@ -270,7 +339,8 @@ function startMainLoop(ctx) {
 function init() {
     var ctx = createCanvas();
     initInput();
-    g.entities.push(Object.create(Ship()));
+    var ship = Object.create(Ship());
+    g.entities[ship.id()] = ship;
     startMainLoop(ctx);
 }
 
