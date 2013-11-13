@@ -216,17 +216,6 @@ function Laser(transform) {
     var _life = g.laserLife;
 
     _laser.update = function() {
-        if (_transform.x() > g.halfWidth) {
-            _transform.x(-g.halfWidth);
-        } else if (_transform.x() < -g.halfWidth) {
-            _transform.x(g.halfWidth);
-        }
-        if (_transform.y() > g.halfHeight) {
-            _transform.y(-g.halfHeight);
-        } else if (_transform.y() < -g.halfHeight) {
-            _transform.y(g.halfHeight);
-        }
-
         if (_life-- < 0) {
             g.entityManager.removeEntity(this);
         }
@@ -404,6 +393,9 @@ function startMainLoop(ctx) {
         while (currentTime > nextGameTick && loops < maxFrameSkip) {
             update(skipTicks);
             nextGameTick += skipTicks;
+            if (nextGameTick < currentTime) {
+                nextGameTick = currentTime + skipTicks;
+            }
             loops++;
         }
 
