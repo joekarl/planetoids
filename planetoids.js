@@ -5,12 +5,28 @@ var g = {
     halfHeight: 300,
     rotationSpeed: 0.07,
     thrustSpeed: 0.3,
-    entities: {},
+    entityManager: {
+        _entities: {},
+        addEntity: function(entity) {
+            return this._entities[entity.id()] = entity;
+        },
+        removeEntity: function(entity) {
+            delete this._entities[entity.id()];
+            return entity;
+        },
+        entityIds: function() {
+            return Object.keys(this._entities);
+        },
+        entity: function(id) {
+            return this._entities[id];
+        }
+    },
     shipFriction: 0.05,
     entityId: 0,
     laserSpeed: 5,
     laserLife: 100,
-    laserFireRate: 10, 
+    laserFireRate: 7, 
+    planetSpeed: 4,
     ups: 30 //updates per second
 };
 
@@ -50,10 +66,12 @@ function Transform() {
             _sy = transform.sy();
             _angle = transform.angle();
             _va = transform.va();
+            return this;
         },
         x: function(_) {
             if (_ != undefined) {
                 _x = _;
+                return this;
             } else {
                 return _x;
             }
@@ -61,6 +79,7 @@ function Transform() {
         y: function(_) {
             if (_ != undefined) {
                 _y = _;
+                return this;
             } else {
                 return _y;
             }
@@ -68,6 +87,7 @@ function Transform() {
         vx: function(_) {
             if (_ != undefined) {
                 _vx = _;
+                return this;
             } else {
                 return _vx;
             }
@@ -75,6 +95,7 @@ function Transform() {
         vy: function(_) {
             if (_ != undefined) {
                 _vy = _;
+                return this;
             } else {
                 return _vy;
             }
@@ -82,6 +103,7 @@ function Transform() {
         sx: function(_) {
             if (_ != undefined) {
                 _sx = _;
+                return this;
             } else {
                 return _sx;
             }
@@ -89,6 +111,7 @@ function Transform() {
         sy: function(_) {
             if (_ != undefined) {
                 _sy = _;
+                return this;
             } else {
                 return _sy;
             }
@@ -96,6 +119,7 @@ function Transform() {
         angle: function(_) {
             if (_ != undefined) {
                 _angle = _;
+                return this;
             } else {
                 return _angle;
             }
@@ -103,6 +127,7 @@ function Transform() {
         va: function(_) {
             if (_ != undefined) {
                 _va = _;
+                return this;
             } else {
                 return _va;
             }
@@ -123,17 +148,70 @@ function Entity() {
     };
 }
 
+function Planet(scale) {
+    var _planet = Object.create(Entity());
+    scale = scale || 25;
+
+    var _vertexes = [];
+    var _vertexCount = Math.round(Math.random() * 4 + 12); // between 8 and 16
+    var _radianIncrement = 2 * Math.PI /  _vertexCount;
+    var _i, _radiusAdjust, _radians = 0;
+    for (_i = 0; _i < _vertexCount; ++_i) {
+        _radiusAdjust = scale * (0.25 - (Math.random() * 100) / 100 * 0.5);
+        _vertexes.push([
+            Math.cos(_radians) * (scale + _radiusAdjust), 
+            Math.sin(_radians) * (scale + _radiusAdjust)
+        ]);
+        _radians += _radianIncrement;
+    }
+
+    var _transform = _planet.transform();
+    _transform.x((Math.random() * -g.width) + g.halfWidth)
+        .y((Math.random() * -g.height) + g.halfHeight)
+        .vx((Math.random() * -g.planetSpeed) + g.planetSpeed / 2)
+        .vy((Math.random() * -g.planetSpeed) + g.planetSpeed / 2);
+
+    _planet.update = function() {
+        if (_transform.x() > g.halfWidth) {
+            _transform.x(-g.halfWidth);
+        } else if (_transform.x() < -g.halfWidth) {
+            _transform.x(g.halfWidth);
+        }
+        if (_transform.y() > g.halfHeight) {
+            _transform.y(-g.halfHeight);
+        } else if (_transform.y() < -g.halfHeight) {
+            _transform.y(g.halfHeight);
+        }
+    }
+
+    _planet.render = function(dt, ctx) {
+        ctx.strokeStyle = "#FF0000";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(_vertexes[_vertexCount - 1][0], _vertexes[_vertexCount - 1][1])
+        for (var i = 0; i < _vertexCount; ++i) {
+            var vertex = _vertexes[i];
+            ctx.lineTo(vertex[0], vertex[1]);
+        }
+        ctx.stroke();
+    };
+
+    return _planet;
+}
+
 function Laser(transform) {
     var _laser = Object.create(Entity());
 
     var _transform = _laser.transform();
-    _transform.copy(transform);
-    _transform.vx(_transform.vx() - Math.cos(_transform.angle()) * g.laserSpeed);
-    _transform.vy(_transform.vy() + Math.sin(_transform.angle()) * g.laserSpeed);
-    _transform.angle(0);
-    _transform.va(0);
-    _transform.sx(2);
-    _transform.sy(2);
+    _transform.copy(transform)
+        .x(_transform.x() - Math.cos(_transform.angle()) * 7.5)
+        .y(_transform.y() + Math.sin(_transform.angle()) * 7.5)
+        .vx(_transform.vx() - Math.cos(_transform.angle()) * g.laserSpeed)
+        .vy(_transform.vy() + Math.sin(_transform.angle()) * g.laserSpeed)
+        .angle(0)
+        .va(0)
+        .sx(2)
+        .sy(2);
 
     var _life = g.laserLife;
 
@@ -150,7 +228,7 @@ function Laser(transform) {
         }
 
         if (_life-- < 0) {
-            delete g.entities[_laser.id()];
+            g.entityManager.removeEntity(this);
         }
     };
 
@@ -169,8 +247,6 @@ function Ship() {
     var _ship = Object.create(Entity());
 
     var _transform = _ship.transform();
-    _transform.sx(5);
-    _transform.sy(5);
     _transform.angle(- Math.PI / 2);
     var fireCounter = g.laserFireRate;
 
@@ -228,19 +304,19 @@ function Ship() {
             _transform.vy(_transform.vy() + Math.sin(_transform.angle()) * g.thrustSpeed);
         }
         if (fireCounter-- < 0 && input.isActive(input.LASER)) {
-            var laser = Object.create(Laser(_transform));
-            g.entities[laser.id()] = laser;
+            g.entityManager.addEntity(Object.create(Laser(_transform)));
             fireCounter = g.laserFireRate;
         }
     }
 
     _ship.render = function(dt, ctx) {
         ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        ctx.lineTo(1, 1);
-        ctx.lineTo(-1.5, 0);
-        ctx.lineTo(1, -1);
+        ctx.lineTo(5, 5);
+        ctx.lineTo(-7.5, 0);
+        ctx.lineTo(5, -5);
         ctx.lineTo(0, 0);
         ctx.stroke();
     }
@@ -280,11 +356,13 @@ function clearScreen(ctx) {
     ctx.rotate(0);
     ctx.fillStyle = "rgb(0,0,0)";
     ctx.fillRect (0, 0, g.width, g.height);
+    ctx.fillStyle = undefined;
+    ctx.strokeStyle = undefined;
 }
 
 function update(dt) {
-    Object.keys(g.entities).forEach(function (id){
-        var entity = g.entities[id];
+    g.entityManager.entityIds().forEach(function (id){
+        var entity = g.entityManager.entity(id);
         var transform = entity.transform();
         transform.x(transform.x() + transform.vx());
         transform.y(transform.y() + transform.vy());
@@ -297,8 +375,8 @@ function update(dt) {
 
 function render(dt, ctx) {
     clearScreen(ctx);
-    Object.keys(g.entities).forEach(function (id){
-        var entity = g.entities[id];
+    g.entityManager.entityIds().forEach(function (id){
+        var entity = g.entityManager.entity(id);
         if (entity.render) {
             var transform = entity.transform();
             ctx.save();
@@ -329,18 +407,28 @@ function startMainLoop(ctx) {
             loops++;
         }
 
-        render((nextGameTick - currentTime) / skipTicks, _ctx);
+        var interpolation = (nextGameTick - currentTime) / skipTicks;
+        interpolation = interpolation > 1 ? 1 : interpolation;
+        interpolation = interpolation < 0 ? 0 : interpolation;
+        render(interpolation, _ctx);
         fpsStats.end();
         window.requestAnimationFrame(_loop);
     };
     _loop();
-};
+}
+
+function createPlanets() {
+    var planet;
+    for(var i = 0; i < 4; ++i) {
+        g.entityManager.addEntity(Object.create(Planet(25)));
+    }
+}
 
 function init() {
     var ctx = createCanvas();
     initInput();
-    var ship = Object.create(Ship());
-    g.entities[ship.id()] = ship;
+    g.entityManager.addEntity(Object.create(Ship()));
+    createPlanets();
     startMainLoop(ctx);
 }
 
