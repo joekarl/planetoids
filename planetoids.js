@@ -5,6 +5,8 @@ var g = {
     halfHeight: 300,
     rotationSpeed: 0.07,
     thrustSpeed: 0.3,
+    entities: [],
+    shipFriction: 0.05,
     ups: 30 //updates per second
 };
 
@@ -112,6 +114,32 @@ function Ship() {
     _transform.angle(- Math.PI / 2);
 
     _ship.update = function() {
+        var previousVx = _transform.vx();
+        var previousVy = _transform.vy();
+
+        if (previousVx > 0) {
+            _transform.vx(_transform.vx() - g.shipFriction);
+            if (_transform.vx() < 0) {
+                _transform.vx(0);
+            }
+        } else if (previousVx < 0) {
+            _transform.vx(_transform.vx() + g.shipFriction);
+            if (_transform.vx() > 0) {
+                _transform.vx(0);
+            }
+        }
+        if (previousVy > 0) {
+            _transform.vy(_transform.vy() - g.shipFriction);
+            if (_transform.vy() < 0) {
+                _transform.vy(0);
+            }
+        } else if (previousVy < 0) {
+            _transform.vy(_transform.vy() + g.shipFriction);
+            if (_transform.vy() > 0) {
+                _transform.vy(0);
+            }
+        }
+
         if (_transform.x() > g.halfWidth) {
             _transform.x(-g.halfWidth);
         } else if (_transform.x() < -g.halfWidth) {
@@ -242,7 +270,6 @@ function startMainLoop(ctx) {
 function init() {
     var ctx = createCanvas();
     initInput();
-    g.entities = [];
     g.entities.push(Object.create(Ship()));
     startMainLoop(ctx);
 }
