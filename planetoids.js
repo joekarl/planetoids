@@ -3,8 +3,8 @@ var g = {
     height: 600,
     halfWidth: 400,
     halfHeight: 300,
-    rotationSpeed: 0.07,
-    thrustSpeed: 0.3,
+    rotationSpeed: 0.12,
+    thrustSpeed: 0.25,
     entityManager: {
         _entities: {},
         addEntity: function(entity) {
@@ -28,6 +28,9 @@ var g = {
     laserFireRate: 7, 
     planetSpeed: 4,
     maxShipSpeed: 12,
+    drawCollisionBounds: false,
+    originalPlanetSize: 24,
+    maxPlanetSplits: 3,
     ups: 30 //updates per second
 };
 
@@ -35,7 +38,15 @@ var fpsStats = new Stats();
 fpsStats.setMode(0);
 document.body.appendChild(fpsStats.domElement);
 
-init(); //start
+g.explosionSound = new Howl({
+    urls: ['explosion.mp3'],
+    onload: function() {
+        g.laserSound = new Howl({
+            urls:['laser.wav'],
+            onload: init
+        });
+    }
+});
 
 function createCanvas() {
     var canvas = document.createElement('canvas');
@@ -45,6 +56,21 @@ function createCanvas() {
 
     var ctx = canvas.getContext('2d');
     return ctx;
+}
+
+function BoundingCircle(radius) {
+    var _radius = radius;
+    
+    return {
+        radius: function(_) {
+            if (_ != undefined) {
+                _radius = _;
+                return this;
+            } else {
+                return _radius;
+            }
+        }
+    };
 }
 
 function Transform() {
@@ -59,15 +85,22 @@ function Transform() {
 
     return {
         copy: function(transform) {
-            _x = transform.x();
-            _y = transform.y();
-            _vx = transform.vx();
-            _vy = transform.vy();
-            _sx = transform.sx();
-            _sy = transform.sy();
-            _angle = transform.angle();
-            _va = transform.va();
+            if (transform) {
+                _x = transform.x();
+                _y = transform.y();
+                _vx = transform.vx();
+                _vy = transform.vy();
+                _sx = transform.sx();
+                _sy = transform.sy();
+                _angle = transform.angle();
+                _va = transform.va();
+            }
             return this;
+        },
+        distance: function(transform) {
+            return Math.sqrt(
+                Math.pow(transform.x() - _x, 2) + Math.pow(transform.y() - _y, 2)
+            );
         },
         x: function(_) {
             if (_ != undefined) {
@@ -139,21 +172,44 @@ function Transform() {
 function Entity() {
     var _transform = new Transform();
     var _id = g.entityId++;
+    var _boundingCircle;
+    var _type = "Entity";
+    
     return {
         transform: function() {
             return _transform;
         },
         id: function() {
             return _id;
+        },
+        boundingCircle: function(_) {
+            if (_ != undefined) {
+                _boundingCircle = _;
+                return this;
+            } else {
+                return _boundingCircle;
+            }
+        },
+        type: function(_) {
+            if (_ != undefined) {
+                _type = _;
+                return this;
+            } else {
+                return _type;
+            }
         }
     };
 }
 
-function Planet(scale) {
+function Planet(scale, transform) {
     var _planet = Object.create(Entity());
-    scale = scale || 25;
+    scale = scale;
+    
+    _planet.type("Planet");
+    _planet.boundingCircle(Object.create(BoundingCircle(scale)));
 
     var _vertexes = [];
+    var _destroyed = false;
     var _vertexCount = Math.round(Math.random() * 4 + 12); // between 8 and 16
     var _radianIncrement = 2 * Math.PI /  _vertexCount;
     var _i, _radiusAdjust, _radians = 0;
@@ -167,12 +223,32 @@ function Planet(scale) {
     }
 
     var _transform = _planet.transform();
-    _transform.x((Math.random() * -g.width) + g.halfWidth)
-        .y((Math.random() * -g.height) + g.halfHeight)
-        .vx((Math.random() * -g.planetSpeed) + g.planetSpeed / 2)
+
+    if (!transform) {
+        _transform.x((Math.random() * -g.width) + g.halfWidth)
+            .y((Math.random() * -g.height) + g.halfHeight);
+    } else {
+        _planet.transform(_transform.copy(transform));
+    }
+    
+    _transform.vx((Math.random() * -g.planetSpeed) + g.planetSpeed / 2)
         .vy((Math.random() * -g.planetSpeed) + g.planetSpeed / 2);
+        
+    _planet.scale = function() {
+        return scale;
+    };
 
     _planet.update = function() {
+        if (_destroyed) {
+            g.entityManager.addEntity(Explosion());
+            g.entityManager.removeEntity(this);
+            if ((scale / 2) >= (g.originalPlanetSize / (2 * g.maxPlanetSplits))) {
+                for(var i = 0; i < 4; ++i) {
+                    g.entityManager.addEntity(Object.create(Planet(scale / 2, this.transform())));
+                }
+            }
+        }
+        
         if (_transform.x() > g.halfWidth) {
             _transform.x(-g.halfWidth);
         } else if (_transform.x() < -g.halfWidth) {
@@ -196,12 +272,22 @@ function Planet(scale) {
         }
         ctx.stroke();
     };
+    
+    _planet.handleCollision = function(entity) {
+        if (entity.type() == 'Laser') {
+            _destroyed = true;
+            entity.destroy();
+        }
+    }
 
     return _planet;
 }
 
 function Laser(transform) {
     var _laser = Object.create(Entity());
+    
+    _laser.type("Laser");
+    _laser.boundingCircle(Object.create(BoundingCircle(1)));
 
     var _transform = _laser.transform();
     _transform.copy(transform)
@@ -215,12 +301,21 @@ function Laser(transform) {
         .sy(2);
 
     var _life = g.laserLife;
+    var _firstUpdate = true;
 
     _laser.update = function() {
+        if (_firstUpdate) {
+            g.laserSound.play();
+            _firstUpdate = false;
+        }
         if (_life-- < 0) {
             g.entityManager.removeEntity(this);
         }
     };
+    
+    _laser.destroy = function() {
+        _life = -1;
+    }
 
     _laser.render = function(dt, ctx) {
         ctx.strokeStyle = "#FFFFFF";
@@ -233,14 +328,44 @@ function Laser(transform) {
     return _laser;
 }
 
+function Explosion(callback) {
+    var _explosion = Object.create(Entity());
+    g.explosionSound.play();
+    
+    _explosion.type("Explosion");
+    
+    setTimeout(function() {
+        g.entityManager.removeEntity(_explosion);
+        if (callback) {
+            callback();
+        }
+    }, 5000);
+    return _explosion;
+}
+
 function Ship() {
     var _ship = Object.create(Entity());
+    
+    var _destroyed = false;
+    
+    _ship.type("Ship");
+    _ship.boundingCircle(Object.create(BoundingCircle(7.5)));
 
     var _transform = _ship.transform();
     _transform.angle(- Math.PI / 2);
     var fireCounter = g.laserFireRate;
 
     _ship.update = function() {
+        if (_destroyed) {
+            //create explosion
+            //remove ship
+            g.entityManager.removeEntity(this);
+            g.entityManager.addEntity(Explosion(function(){
+                g.entityManager.addEntity(Object.create(Ship()));
+            }));
+            return;
+        }
+        
         var previousVx = _transform.vx();
         var previousVy = _transform.vy();
 
@@ -316,6 +441,16 @@ function Ship() {
         ctx.lineTo(0, 0);
         ctx.stroke();
     }
+    
+    _ship.handleCollision = function(entity) {
+        if (entity.type() == 'Planet') {
+            this.destroy();
+        }
+    }
+    
+    _ship.destroy = function() {
+        _destroyed = true;
+    };
 
     return _ship;
 }
@@ -357,6 +492,7 @@ function clearScreen(ctx) {
 }
 
 function update(dt) {
+    var collisionCheckedEntities = {};
     g.entityManager.entityIds().forEach(function (id){
         var entity = g.entityManager.entity(id);
         var transform = entity.transform();
@@ -366,6 +502,31 @@ function update(dt) {
         if (entity.update) {
             entity.update(dt);
         }
+        
+        collisionCheckedEntities[id] = [];
+        //check for collisions
+        g.entityManager.entityIds().forEach(function (collisionId){
+            var collisionEntity = g.entityManager.entity(collisionId);
+            collisionCheckedEntities[id][collisionId] = true;
+            if (id == collisionId 
+                || (collisionCheckedEntities[collisionId] && collisionCheckedEntities[collisionId][id])
+                || !entity.boundingCircle()
+                || !collisionEntity.boundingCircle()) {
+                return;
+            }
+            
+            var combinedRadius = collisionEntity.boundingCircle().radius()
+                + entity.boundingCircle().radius();
+            if (transform.distance(collisionEntity.transform()) < combinedRadius) {
+                //collision!!!
+                if (entity.handleCollision) {   
+                    entity.handleCollision(collisionEntity);
+                }
+                if (collisionEntity.handleCollision) {
+                    collisionEntity.handleCollision(entity);
+                }
+            }
+        });
     });
 }
 
@@ -380,6 +541,17 @@ function render(dt, ctx) {
             ctx.scale(transform.sx(), -transform.sy()); //flip axis
             ctx.rotate(transform.angle());
             entity.render(dt, ctx);
+            
+            if (g.drawCollisionBounds && entity.boundingCircle()) {
+                ctx.save();
+                ctx.strokeStyle = "#00FF00";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(0, 0, entity.boundingCircle().radius(), 2 * Math.PI, false);
+                ctx.stroke()
+                ctx.restore();
+            }
+            
             ctx.restore();
         }
     });
@@ -417,9 +589,8 @@ function startMainLoop(ctx) {
 }
 
 function createPlanets() {
-    var planet;
     for(var i = 0; i < 4; ++i) {
-        g.entityManager.addEntity(Object.create(Planet(25)));
+        g.entityManager.addEntity(Object.create(Planet(g.originalPlanetSize)));
     }
 }
 
