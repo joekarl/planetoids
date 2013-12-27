@@ -27,6 +27,7 @@ var g = {
     laserLife: 100,
     laserFireRate: 7, 
     planetSpeed: 4,
+    maxShipSpeed: 12,
     ups: 30 //updates per second
 };
 
@@ -291,6 +292,12 @@ function Ship() {
         if (input.isActive(input.THRUST)) {
             _transform.vx(_transform.vx() - Math.cos(_transform.angle()) * g.thrustSpeed);
             _transform.vy(_transform.vy() + Math.sin(_transform.angle()) * g.thrustSpeed);
+            var vm = Math.sqrt(Math.pow(_transform.vx(), 2) + Math.pow(_transform.vy(), 2));
+            if (vm > g.maxShipSpeed) {
+                //clamp velocities to max velocity
+                _transform.vx(_transform.vx() + Math.cos(_transform.angle()) * (vm - g.maxShipSpeed));
+                _transform.vy(_transform.vy() - Math.sin(_transform.angle()) * (vm - g.maxShipSpeed));
+            }
         }
         if (fireCounter-- < 0 && input.isActive(input.LASER)) {
             g.entityManager.addEntity(Object.create(Laser(_transform)));
